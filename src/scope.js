@@ -7,12 +7,41 @@ function Scope(){
 	this.$$watchers = [];
 	//record last dirty watch to optimize digest.
 	this.$$lastDirtyWatch = null;
+	//schedule async jobs
+	this.$$asyncQueue = [];
 }
 
-Scope.prototype.$watch = function(watchFn, listenerFn){
+Scope.prototype.$evalAsync = function(expr){
+	//store the scope is used for scope inheritance.
+	this.$$asyncQueue.push({scope: this, expression: expr});
+};
+
+Scope.prototype.$$areEqual = function(newValue, oldValue, valueEq){
+	if(valueEq){
+		return _.isEqual(newValue, oldValue);
+	} else {
+		return newValue === oldValue || (typeof newValue === 'number' && typeof oldValue === 'number' && 
+			isNaN(newValue) && isNaN(oldValue));
+	}
+};
+
+Scope.prototype.$eval = function(expr, locals){
+	return expr(this, locals);
+};
+
+Scope.prototype.$apply = function(expr){
+	try{
+		return this.$eval(expr);
+	} finally{
+		this.$digest();//always execute.
+	}
+};
+
+Scope.prototype.$watch = function(watchFn, listenerFn, valueEq){
 	var watcher = {
 		watchFn: watchFn,
 		listenerFn: listenerFn || function() {},
+		valueEq : !!valueEq,
 		last : initWatchVal
 	};
 	this.$$watchers.push(watcher);
@@ -26,9 +55,9 @@ Scope.prototype.$$digestOnce = function(){
 	_.forEach(this.$$watchers, function(watcher){
 		newValue = watcher.watchFn(self);
 		oldValue = watcher.last;
-		if(newValue != oldValue){
+		if(!self.$$areEqual(newValue, oldValue, watcher.valueEq)){
 			self.$$lastDirtyWatch = watcher;
-			watcher.last = newValue;
+			watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
 			watcher.listenerFn(newValue, oldValue === initWatchVal ? newValue : oldValue, self);
 			dirty = true;
 		}else if(self.$$lastDirtyWatch === watcher){
@@ -43,10 +72,14 @@ Scope.prototype.$digest = function(){
 	var dirty;
 	this.$$lastDirtyWatch = null;
 	do {
+		while(this.$$asyncQueue.length){
+			var asyncTask = this.$$asyncQueue.shift();
+			asyncTask.scope.$eval(asyncTask.expression);
+		}
 		//wait for all watchers stable, no value changes.
 		dirty = this.$$digestOnce();
-		if(dirty && !(ttl--)){
+		if((dirty || this.$$asyncQueue.length) && !(ttl--)){
 			throw "10 digest iterations reached";
 		}
-	}while(dirty);
+	}while(dirty || this.$$asyncQueue.length);
 };
