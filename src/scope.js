@@ -9,7 +9,11 @@ function Scope(){
 	this.$$lastDirtyWatch = null;
 	//schedule async jobs
 	this.$$asyncQueue = [];
+	this.$$applyAsyncQueue = [];
+	//keep track of the timeout schedule of applyAsync queue draining.
+	this.$$applyAsyncId = null;
 	this.$$phase = null;
+
 }
 
 Scope.prototype.$beginPhase = function(phase){
@@ -21,6 +25,27 @@ Scope.prototype.$beginPhase = function(phase){
 
 Scope.prototype.$clearPhase = function(){
 	this.$$phase = null;
+};
+
+Scope.prototype.$$flushApplyAsync = function(){
+	while(this.$$applyAsyncQueue.length){
+		this.$$applyAsyncQueue.shift()();
+	}
+	this.$$applyAsyncId = null;
+};
+
+Scope.prototype.$applyAsync = function(expr){
+	var self = this;
+	self.$$applyAsyncQueue.push(function(){
+		self.$eval(expr);
+	});
+
+    if(self.$$applyAsyncId === null){//not yet schedule, optimize digest process.
+    	self.$$applyAsyncId = setTimeout(function(){
+			self.$apply(_.bind(self.$$flushApplyAsync, self));
+		}, 0);//execute in the next round.
+    }
+	
 };
 
 Scope.prototype.$evalAsync = function(expr){
@@ -94,6 +119,12 @@ Scope.prototype.$digest = function(){
 	var dirty;
 	this.$$lastDirtyWatch = null;
 	this.$beginPhase("$digest");
+
+	if(this.$$applyAsyncId){//if there is applyAsync func, flush it.
+		clearTimeout(this.$$applyAsyncId);
+		this.$$flushApplyAsync();
+	}
+
 	do {
 		while(this.$$asyncQueue.length){
 			var asyncTask = this.$$asyncQueue.shift();
