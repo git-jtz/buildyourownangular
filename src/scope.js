@@ -12,6 +12,7 @@ function Scope(){
 	this.$$applyAsyncQueue = [];
 	//keep track of the timeout schedule of applyAsync queue draining.
 	this.$$applyAsyncId = null;
+	this.$$postDigestQueue = [];
 	this.$$phase = null;
 
 }
@@ -29,9 +30,21 @@ Scope.prototype.$clearPhase = function(){
 
 Scope.prototype.$$flushApplyAsync = function(){
 	while(this.$$applyAsyncQueue.length){
-		this.$$applyAsyncQueue.shift()();
+		try{
+			this.$$applyAsyncQueue.shift()();
+		}catch(e){
+			console.error(e);
+		}
 	}
 	this.$$applyAsyncId = null;
+};
+
+Scope.prototype.$$postDigest = function(fn){
+	try{
+		this.$$postDigestQueue.push(fn);
+	}catch(e){
+		console.error(e);
+	}
 };
 
 Scope.prototype.$applyAsync = function(expr){
@@ -84,31 +97,93 @@ Scope.prototype.$apply = function(expr){
 	}
 };
 
+Scope.prototype.$watchGroup = function(watchFns, listenerFn){
+	var self = this;
+	var newValues = new Array(watchFns.length);
+	var oldValues = new Array(watchFns.length); 
+
+	var changeReactionScheduled = false;
+	var firstRun = true;
+
+	if(watchFns.length === 0){
+		var shouldCall = true;
+		self.$evalAsync(function(){
+			if(shouldCall){
+				listenerFn(newValues, newValues, self);//call listener exactly once.
+			}
+		});
+		return function(){
+			shouldCall = false;
+		};
+	}
+
+	function watchGroupListener() {
+		if(firstRun){
+			firstRun = false;
+			listenerFn(newValues, newValues, self);
+		}else{
+			listenerFn(newValues, oldValues, self);
+		}
+		changeReactionScheduled = false;
+	}
+	var destroyFunctions = _.map(watchFns, function(watchFn, i){
+		return self.$watch(watchFn, function(newValue, oldValue){
+			newValues[i] = newValue;
+			oldValues[i] = oldValue;
+			if(!changeReactionScheduled){
+				changeReactionScheduled = true;//already schedule a listener call
+				self.$evalAsync(watchGroupListener);
+			}
+		});
+	});
+
+	return function(){
+		_.forEach(destroyFunctions, function(destroyFunction){
+			destroyFunction();
+		});
+	};
+};
+
 Scope.prototype.$watch = function(watchFn, listenerFn, valueEq){
+	var self = this;
 	var watcher = {
 		watchFn: watchFn,
 		listenerFn: listenerFn || function() {},
 		valueEq : !!valueEq,
 		last : initWatchVal
 	};
-	this.$$watchers.push(watcher);
+	this.$$watchers.unshift(watcher);//add to the head of array instead.
 	//whenever there is a new watcher, clear the last dirty because the new one may be added later and dirty.
 	this.$$lastDirtyWatch = null;
+
+	return function(){//this is a closure in which the temp variables stays, like watcher.
+		var index = self.$$watchers.indexOf(watcher);
+		if(index >= 0){
+			self.$$watchers.splice(index, 1);
+			self.$$lastDirtyWatch = null;//eliminate short-circuiting optimization.
+		}
+	};
 };
 
 Scope.prototype.$$digestOnce = function(){
 	var self = this;
 	var newValue, oldValue, dirty;
-	_.forEach(this.$$watchers, function(watcher){
-		newValue = watcher.watchFn(self);
-		oldValue = watcher.last;
-		if(!self.$$areEqual(newValue, oldValue, watcher.valueEq)){
-			self.$$lastDirtyWatch = watcher;
-			watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
-			watcher.listenerFn(newValue, oldValue === initWatchVal ? newValue : oldValue, self);
-			dirty = true;
-		}else if(self.$$lastDirtyWatch === watcher){
-			return false;
+	_.forEachRight(this.$$watchers, function(watcher){
+		try{
+			if(watcher){//may be removed by other watcher.
+				newValue = watcher.watchFn(self);
+				oldValue = watcher.last;
+				if(!self.$$areEqual(newValue, oldValue, watcher.valueEq)){
+					self.$$lastDirtyWatch = watcher;
+					watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
+					watcher.listenerFn(newValue, oldValue === initWatchVal ? newValue : oldValue, self);
+					dirty = true;
+				}else if(self.$$lastDirtyWatch === watcher){
+					return false;
+				}
+			}
+		}catch(e){
+			console.error(e);
 		}
 	});
 	return dirty;
@@ -127,8 +202,12 @@ Scope.prototype.$digest = function(){
 
 	do {
 		while(this.$$asyncQueue.length){
-			var asyncTask = this.$$asyncQueue.shift();
-			asyncTask.scope.$eval(asyncTask.expression);
+			try{
+				var asyncTask = this.$$asyncQueue.shift();
+				asyncTask.scope.$eval(asyncTask.expression);
+			}catch(e){
+				console.error(e);
+			}
 		}
 		//wait for all watchers stable, no value changes.
 		dirty = this.$$digestOnce();
@@ -138,4 +217,8 @@ Scope.prototype.$digest = function(){
 		}
 	}while(dirty || this.$$asyncQueue.length);
 	this.$clearPhase();
+
+	while(this.$$postDigestQueue.length){
+		this.$$postDigestQueue.shift()();
+	}
 };

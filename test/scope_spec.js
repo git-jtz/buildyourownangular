@@ -461,5 +461,150 @@ describe("Scope", function(){//describe work as grouping
 			}, 50);
 		
 		});
+
+		it("runs a $$postDigest function after each digest", function() {
+		scope.counter = 0;
+		scope.$$postDigest(function() {
+		scope.counter++;
+		});
+		expect(scope.counter).toBe(0);
+		scope.$digest();
+		expect(scope.counter).toBe(1);
+		scope.$digest();
+		expect(scope.counter).toBe(1);
+		});
+
+		it("does not include $$postDigest in the digest", function() {
+			scope.aValue = 'original value';
+			scope.$$postDigest(function() {
+			scope.aValue = 'changed value';
+			});
+			scope.$watch(
+			function(scope) {
+
+				return scope.aValue;
+			},
+			function(newValue, oldValue, scope) {
+			scope.watchedValue = newValue;
+			}
+			);
+			scope.$digest();
+			expect(scope.watchedValue).toBe('original value');
+			scope.$digest();
+			expect(scope.watchedValue).toBe('changed value');
+		});
+
+		it("allows destroying a $watch with a removal function", function() {
+			scope.aValue = 'abc';
+			scope.counter = 0;
+			var destroyWatch = scope.$watch(
+			function(scope) { return scope.aValue; },
+			function(newValue, oldValue, scope) {
+			scope.counter++;
+			}
+			);
+			scope.$digest();
+			expect(scope.counter).toBe(1);
+			scope.aValue = 'def';
+			scope.$digest();
+			expect(scope.counter).toBe(2);
+			scope.aValue = 'ghi';
+
+			destroyWatch();
+			scope.$digest();
+			expect(scope.counter).toBe(2);
+		});
+
+	});
+	
+	describe('$watchGroup', function(){
+		var scope;
+		beforeEach(function(){
+			scope = new Scope();
+		});
+
+		it('takes watches as an array and calls listener with arrays', function() {
+			var gotNewValues, gotOldValues;
+
+			scope.aValue = 1;
+			scope.anotherValue = 2;
+
+			scope.$watchGroup([
+				function(scope){ return scope.aValue;},
+				function(scope){ return scope.anotherValue;}
+			], function(newValues, oldValues, scope){
+				gotNewValues = newValues;
+				gotOldValues = oldValues;
+			});
+
+			scope.$digest();
+			expect(gotNewValues).toEqual([1, 2]);
+			expect(gotOldValues).toEqual([1, 2]);
+		});
+
+		it('only calls listener once per digest', function() {
+			var counter = 0;
+			scope.aValue = 1;
+			scope.anotherValue = 2;
+			scope.$watchGroup([
+			function(scope) { return scope.aValue; },
+			function(scope) { return scope.anotherValue; }
+			], function(newValues, oldValues, scope) {
+			counter++;
+			});
+			scope.$digest();
+			expect(counter).toEqual(1);
+		});
+
+		it('uses the same array of old and new values on first run', function() {
+			var gotNewValues, gotOldValues;
+			scope.aValue = 1;
+			scope.anotherValue = 2;
+			scope.$watchGroup([
+			function(scope) { return scope.aValue; },
+			function(scope) { return scope.anotherValue; }
+			], function(newValues, oldValues, scope) {
+				gotNewValues = newValues;
+				gotOldValues = oldValues;
+			});
+
+			scope.$digest();
+			expect(gotNewValues).toBe(gotOldValues);
+		});
+
+		it('uses different arrays for old and new values on subsequent runs', function() {
+			var gotNewValues, gotOldValues;
+			scope.aValue = 1;
+			scope.anotherValue = 2;
+			scope.$watchGroup([
+			function(scope) { return scope.aValue; },
+			function(scope) { return scope.anotherValue; }
+			], function(newValues, oldValues, scope) {
+			gotNewValues = newValues;
+			gotOldValues = oldValues;
+			});
+			scope.$digest();//at first time, two arrays are the same.
+			scope.anotherValue = 3;
+			scope.$digest();//old != new now
+			expect(gotNewValues).toEqual([1, 3]);
+			expect(gotOldValues).toEqual([1, 2]);
+		});
+
+		it('can be deregistered', function() {
+			var counter = 0;
+			scope.aValue = 1;
+			scope.anotherValue = 2;
+			var destroyGroup = scope.$watchGroup([
+			function(scope) { return scope.aValue; },
+			function(scope) { return scope.anotherValue; }
+			], function(newValues, oldValues, scope) {
+			counter++;
+			});
+			scope.$digest();
+			scope.anotherValue = 3;
+			destroyGroup();
+			scope.$digest();
+			expect(counter).toEqual(1);
+		});
 	});
 });
