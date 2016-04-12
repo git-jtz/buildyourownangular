@@ -14,6 +14,7 @@ function Scope(){
 	this.$$applyAsyncId = null;
 	this.$$postDigestQueue = [];
 	this.$$phase = null;
+	this.$$children = [];
 
 }
 
@@ -221,4 +222,16 @@ Scope.prototype.$digest = function(){
 	while(this.$$postDigestQueue.length){
 		this.$$postDigestQueue.shift()();
 	}
+};
+
+Scope.prototype.$new = function(){
+	/*var ChildScope = function(){};
+	ChildScope.prototype = this;
+	var child = new ChildScope();*/
+	//HTML5 Object creat method is an alternative.
+	var child = Object.create(this);
+	this.$$children.push(child);
+	child.$$watchers = [];
+	child.$$children = [];
+	return child;
 };
