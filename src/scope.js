@@ -15,6 +15,7 @@ function Scope(){
 	this.$$postDigestQueue = [];
 	this.$$phase = null;
 	this.$$children = [];
+	this.$root = this;
 
 }
 
@@ -68,7 +69,7 @@ Scope.prototype.$evalAsync = function(expr){
 	if(!self.$$phase && !self.$$asyncQueue.length){
 		setTimeout(function(){
 			if(self.$$asyncQueue.length){
-				self.$digest();
+				self.$root.$digest();
 			}
 		}, 0);
 	}
@@ -94,7 +95,7 @@ Scope.prototype.$apply = function(expr){
 		return this.$eval(expr);
 	} finally{
 		this.$clearPhase();
-		this.$digest();//always execute.
+		this.$root.$digest();//always execute.
 	}
 };
 
@@ -155,13 +156,13 @@ Scope.prototype.$watch = function(watchFn, listenerFn, valueEq){
 	};
 	this.$$watchers.unshift(watcher);//add to the head of array instead.
 	//whenever there is a new watcher, clear the last dirty because the new one may be added later and dirty.
-	this.$$lastDirtyWatch = null;
+	this.$root.$$lastDirtyWatch = null;
 
 	return function(){//this is a closure in which the temp variables stays, like watcher.
 		var index = self.$$watchers.indexOf(watcher);
 		if(index >= 0){
 			self.$$watchers.splice(index, 1);
-			self.$$lastDirtyWatch = null;//eliminate short-circuiting optimization.
+			self.$root.$$lastDirtyWatch = null;//eliminate short-circuiting optimization.
 		}
 	};
 };
@@ -178,11 +179,11 @@ Scope.prototype.$$digestOnce = function(){
 					newValue = watcher.watchFn(scope);
 					oldValue = watcher.last;
 					if(!scope.$$areEqual(newValue, oldValue, watcher.valueEq)){
-						self.$$lastDirtyWatch = watcher;
+						self.$root.$$lastDirtyWatch = watcher;
 						watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
 						watcher.listenerFn(newValue, oldValue === initWatchVal ? newValue : oldValue, scope);
 						dirty = true;
-					}else if(self.$$lastDirtyWatch === watcher){
+					}else if(self.$root.$$lastDirtyWatch === watcher){
 						continueLoop = false;
 						return false;
 					}
@@ -200,7 +201,7 @@ Scope.prototype.$$digestOnce = function(){
 Scope.prototype.$digest = function(){
 	var ttl = 10;//default of Angular
 	var dirty;
-	this.$$lastDirtyWatch = null;
+	this.$root.$$lastDirtyWatch = null;
 	this.$beginPhase("$digest");
 
 	if(this.$$applyAsyncId){//if there is applyAsync func, flush it.
@@ -243,12 +244,17 @@ Scope.prototype.$$everyScope = function(fn){
 	
 };
 
-Scope.prototype.$new = function(){
+Scope.prototype.$new = function(isolated){
 	/*var ChildScope = function(){};
 	ChildScope.prototype = this;
 	var child = new ChildScope();*/
-	//HTML5 Object creat method is an alternative.
-	var child = Object.create(this);
+	var child;
+	if(isolated){
+		child = new Scope();
+	}else {
+		//HTML5 Object creat method is an alternative.
+		child = Object.create(this);
+	}
 	this.$$children.push(child);
 	child.$$watchers = [];
 	child.$$children = [];
