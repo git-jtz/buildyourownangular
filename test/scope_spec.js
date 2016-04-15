@@ -797,5 +797,53 @@ describe("Scope", function(){//describe work as grouping
 		child.$digest();
 		expect(child.aValueWas).toBeUndefined();
 		});
+		
+		it("executes $evalAsync functions on isolated scopes", function(done) {
+			var parent = new Scope();
+			var child = parent.$new(true);
+			child.$evalAsync(function(scope) {//add to the child scope queue which shadows the parent's
+			scope.didEvalAsync = true;
+			});
+			
+			setTimeout(function() {
+				expect(child.didEvalAsync).toBe(true);
+				done();
+			}, 50);
+		});
+		
+		it("executes $$postDigest functions on isolated scopes", function() {
+			var parent = new Scope();
+			var child = parent.$new(true);
+			child.$$postDigest(function() {
+			child.didPostDigest = true;
+			});
+			parent.$digest();
+			expect(child.didPostDigest).toBe(true);
+		});
+		
+		it('can take some other scope as the parent', function() {
+			var prototypeParent = new Scope();
+			var hierarchyParent = new Scope();
+			var child = prototypeParent.$new(false, hierarchyParent);//use two parents, one is prototype for data memebers, one is hierarchy for digest
+			
+			//prototypeParent.a = 42;
+			//expect(child.a).toBe(42);
+			
+			child.counter = 0;
+			child.$watch(function(scope){
+				scope.counter++;
+			});
+			child.$$postDigest(function() {
+				child.didPostDigest = true;//depends on child scope uses whose queues. if param 1 of $new is false, then uses caller scope. else uses hierarchyParent
+			});
+			
+			prototypeParent.$digest();
+			//expect(child.counter).toBe(0);
+			
+			//hierarchyParent.$digest();
+			//expect(child.counter).toBe(2);
+		
+			expect(child.didPostDigest).toBe(true);
+		});
 	});
 });

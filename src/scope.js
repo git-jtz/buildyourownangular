@@ -38,7 +38,7 @@ Scope.prototype.$$flushApplyAsync = function(){
 			console.error(e);
 		}
 	}
-	this.$$applyAsyncId = null;
+	this.$root.$$applyAsyncId = null;
 };
 
 Scope.prototype.$$postDigest = function(fn){
@@ -55,8 +55,8 @@ Scope.prototype.$applyAsync = function(expr){
 		self.$eval(expr);
 	});
 
-    if(self.$$applyAsyncId === null){//not yet schedule, optimize digest process.
-    	self.$$applyAsyncId = setTimeout(function(){
+    if(self.$root.$$applyAsyncId === null){//not yet schedule, optimize digest process.
+    	self.$root.$$applyAsyncId = setTimeout(function(){
 			self.$apply(_.bind(self.$$flushApplyAsync, self));
 		}, 0);//execute in the next round.
     }
@@ -204,8 +204,8 @@ Scope.prototype.$digest = function(){
 	this.$root.$$lastDirtyWatch = null;
 	this.$beginPhase("$digest");
 
-	if(this.$$applyAsyncId){//if there is applyAsync func, flush it.
-		clearTimeout(this.$$applyAsyncId);
+	if(this.$root.$$applyAsyncId){//if there is applyAsync func, flush it.
+		clearTimeout(this.$root.$$applyAsyncId);
 		this.$$flushApplyAsync();
 	}
 
@@ -244,18 +244,23 @@ Scope.prototype.$$everyScope = function(fn){
 	
 };
 
-Scope.prototype.$new = function(isolated){
+Scope.prototype.$new = function(isolated, parent){
 	/*var ChildScope = function(){};
 	ChildScope.prototype = this;
 	var child = new ChildScope();*/
 	var child;
+	parent  = parent || this;
 	if(isolated){
 		child = new Scope();
+		child.$root = parent.$root;//used for digest
+		child.$$asyncQueue = parent.$$asyncQueue;
+		child.$$postDigestQueue = parent.$$postDigestQueue;
+		child.$$applyAsyncQueue = parent.$$applyAsyncQueue;
 	}else {
 		//HTML5 Object creat method is an alternative.
 		child = Object.create(this);
 	}
-	this.$$children.push(child);
+	parent.$$children.push(child);
 	child.$$watchers = [];
 	child.$$children = [];
 	return child;
