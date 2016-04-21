@@ -948,5 +948,21 @@ describe("Scope", function(){//describe work as grouping
 		var event2 = listener2.calls.mostRecent().args[0];
 		expect(event1).toBe(event2);
 		});
+		
+		
+		it("passes additional arguments to listeners on ", function() {
+		var listener = jasmine.createSpy();
+		scope.$on('someEvent', listener);
+		scope.$emit('someEvent', 'and', ['additional', 'arguments'], '...');
+		expect(listener.calls.mostRecent().args[1]).toEqual('and');
+		expect(listener.calls.mostRecent().args[2]).toEqual(['additional', 'arguments']);
+		expect(listener.calls.mostRecent().args[3]).toEqual('...');
+		});
+		
+		it("returns the event object on ", function() {
+			var returnedEvent = scope.$emit('someEvent');
+			expect(returnedEvent).toBeDefined();
+			expect(returnedEvent.name).toEqual('someEvent');
+		});
 	});
 });
