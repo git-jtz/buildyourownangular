@@ -286,26 +286,50 @@ Scope.prototype.$on = function(eventName, listener){
 		this.$$listeners[eventName] = listeners = [];
 	}
 	listeners.push(listener);
+	return function(){
+		var index = listeners.indexOf(listener);
+		if(index >= 0){
+			listeners[index] = null;
+		}	
+	};
 };
 
 Scope.prototype.$emit = function(eventName){
+	var event = {name : eventName};
 	var additionalArgs = Array.from(arguments);
 	additionalArgs.splice(0, 1);
-	return this.$$fireEventOnScope(eventName, additionalArgs);
+	var listenerArgs = [event].concat(additionalArgs);
+	var scope = this;
+	do{
+		scope.$$fireEventOnScope(eventName, listenerArgs);
+		scope = scope.$parent;
+	}while(scope);
+	return event;
 };
 
 Scope.prototype.$broadcast = function(eventName){
+	var event = {name : eventName};
 	var additionalArgs = Array.from(arguments);
 	additionalArgs.splice(0, 1);
-	return this.$$fireEventOnScope(eventName, additionalArgs);
+	var listenerArgs = [event].concat(additionalArgs);
+	this.$$everyScope(function(scope){
+		scope.$$fireEventOnScope(eventName, additionalArgs);
+		return true;
+	});
+	return event;
 };
 
-Scope.prototype.$$fireEventOnScope = function(eventName, additionalArgs){
-	var event = {name : eventName};
-	var listenerArgs = [event].concat(additionalArgs);
+Scope.prototype.$$fireEventOnScope = function(eventName, listenerArgs){
+	
 	var listeners = this.$$listeners[eventName] || [];
-	_.forEach(listeners, function(listener){
-		listener.apply(null, listenerArgs);
-	});
+	var i = 0;
+	while(i < listeners.length){
+		if(listeners[i] === null){
+			listeners.splice(i, 1);
+		}else{
+			listeners[i].apply(null, listenerArgs);
+			i++;
+		}
+	}
 	return event; 
 };
