@@ -295,27 +295,31 @@ Scope.prototype.$on = function(eventName, listener){
 };
 
 Scope.prototype.$emit = function(eventName){
-	var event = {name : eventName};
+	var event = {name : eventName, targetScope: this};
 	var additionalArgs = Array.from(arguments);
 	additionalArgs.splice(0, 1);
 	var listenerArgs = [event].concat(additionalArgs);
 	var scope = this;
 	do{
+		event.currentScope = scope;
 		scope.$$fireEventOnScope(eventName, listenerArgs);
 		scope = scope.$parent;
 	}while(scope);
+	event.currentScope = null;
 	return event;
 };
 
 Scope.prototype.$broadcast = function(eventName){
-	var event = {name : eventName};
+	var event = {name : eventName, targetScope: this};
 	var additionalArgs = Array.from(arguments);
 	additionalArgs.splice(0, 1);
 	var listenerArgs = [event].concat(additionalArgs);
 	this.$$everyScope(function(scope){
-		scope.$$fireEventOnScope(eventName, additionalArgs);
+		event.currentScope = scope;
+		scope.$$fireEventOnScope(eventName, listenerArgs);
 		return true;
 	});
+	event.currentScope = null;
 	return event;
 };
 
